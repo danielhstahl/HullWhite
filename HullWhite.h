@@ -15,6 +15,13 @@
 
 /*Note: the fundamental times here are (0, t, T, TM).  0 is current time (and is reflective of the current yield curve), t is some future time that we may want to price options at given the underlying at that time, T is an "initial" maturity and TM a "Final" maturity.  While it is natural to think of (0<t<T<TM), I only require 0<t and 0<T<TM. Note that ALL TIMES ARE WITH RESPECT TO 0!  */
 namespace hullwhite{
+  template<typename MeanRevertSpeed, typename DiffFutureTimes>
+  auto A( /*A(T-t) from the Hull White PDE*/
+    const MeanRevertSpeed& a,/*a*/
+    const DiffFutureTimes& tDiff/*T-t*/
+  ){
+    return (1.0-exp(-a*tDiff))/a;
+  }
   template<typename MeanRevertSpeed, typename FirstFutureTime, typename SecondFutureTime>
   auto A( /*A(t, T) from the Hull White PDE*/
     const MeanRevertSpeed& a,/*a*/
@@ -23,13 +30,7 @@ namespace hullwhite{
   ){
     return A(a, T-t);
   }
-  template<typename MeanRevertSpeed, typename DiffFutureTimes>
-  auto A( /*A(T-t) from the Hull White PDE*/
-    const MeanRevertSpeed& a,/*a*/
-    const DiffFutureTimes& tDiff/*T-t*/
-  ){
-    return (1.0-exp(-a*tDiff))/a;
-  }
+  
   template<typename MeanRevertSpeed, typename Volatility, typename FirstFutureTime, typename SecondFutureTime, typename GetYield, typename GetInstantaneousForward>
   auto C( /*C(t, T) from the Hull White PDE...this may require taking a reference to a yield class!*/
     const MeanRevertSpeed& a, /*a */
@@ -37,8 +38,7 @@ namespace hullwhite{
     const FirstFutureTime& t,/*t*/
     const SecondFutureTime& T, /*T */
     const GetYield& yield, /*does yield*/
-    const GetInstantaneousForward& forward, /* does instantaenous froward*/
-    /*functions "Forward" and "Yield" and these should be the instantanoues forward rate and the continuously compounded zero coupon yield*/
+    const GetInstantaneousForward& forward /* does instantaenous froward*/
   ){
     auto sqr=exp(-a*T)-exp(-a*t);
     return yield(t)-yield(T)+forward(t)*A(a, t, T)-sigma*sigma*sqr*sqr*(exp(2.0*a*t)-1.0)/(4.0*a*a*a);
@@ -64,7 +64,7 @@ namespace hullwhite{
       const GetInstantaneousForward& forward/*functions "Forward" should be the instantanoues forward rate */
   ){
       auto expT=1-exp(-a*T);
-      return forward+sigma*sigma*expT*expT/(2*a*a);
+      return forward(T)+sigma*sigma*expT*expT/(2*a*a);
       
   }
 
@@ -95,7 +95,7 @@ namespace hullwhite{
     const Volatility& sigma,
     const FirstFutureTime& t, /*future time*/
     const SecondFutureTime& T, /*Bond expiration*/
-    const GetYield& yield,/*continuously compounded zero coupon yield*/
+    const GetYield& yield,/*continuously compounded zero coupon yield...multiplied by T*/
     const GetInstantaneousForward& forward //instantanoues forward rate 
   ){
     return exp(-r_t*A(a, t, T)+C(a, sigma, t, T, yield, forward));
@@ -140,8 +140,8 @@ namespace hullwhite{
   ){
     std::sort(couponTimes.begin(), couponTimes.end());
     return futilities::sum(couponTimes, [&](const auto& val, const auto& index){
-      return val>t?Bond_Price(r_t, a, sigma, t, val, yield, forward)*couponRate:0.0;
-    })+Bond_Price(r_t, a, sigma, t, couponTimes.back(), yield, forward);
+      return Bond_Price(val, yield)*couponRate;
+    })+Bond_Price(couponTimes.back(), yield);
 
     /*int n=couponTimes.size();
     auto bondprice=Bond_Price(couponTimes[n-1], yield)*(1+couponRate);
@@ -203,12 +203,12 @@ namespace hullwhite{
     //double guess=.03;//r_t;
     std::sort(couponTimes.begin(), couponTimes.end());
     auto myOptimalR=newton::zeros([&](auto &r){
-      return Coupon_Bond_Price(r, a, sigma, T, couponTimes, couponRate, yieldClass)-strike; //T is "future" time since bond is priced at opion maturity
+      return Coupon_Bond_Price(r, a, sigma, T, couponTimes, couponRate, yield, forward)-strike; //T is "future" time since bond is priced at opion maturity
     }, .03, .0000001, 50);
 
     return futilities::sum(couponTimes, [&](const auto& val, const auto& index){
-      return val>T:Bond_Call(r_t, a, sigma, t, T, val, Bond_Price(myOptimalR, a, sigma, T, val, yield, forward), yield, forward);
-    })+Bond_Call(r_t, a, sigma, t, T, couponTimes.back(), Bond_Price(myOptimalR, a, sigma, T, couponTimes.back(), yieldClass), yieldClass);
+      return val>T?Bond_Call(r_t, a, sigma, t, T, val, Bond_Price(myOptimalR, a, sigma, T, val, yield, forward), yield, forward):0.0;
+    })+couponTimes.back()>T?Bond_Call(r_t, a, sigma, t, T, couponTimes.back(), Bond_Price(myOptimalR, a, sigma, T, couponTimes.back(), yield, forward), yield, forward):0.0;
 
     /*auto retVal=(1.0+couponRate)*Bond_Call(r_t, a, sigma, t, T, couponTimes[n-1], Bond_Price(myOptimalR, a, sigma, T, couponTimes[n-1], yieldClass), yieldClass);
     for(int i=0; i<(n-1); i++){
@@ -232,10 +232,9 @@ namespace hullwhite{
   ){
     return BSPut(
       Bond_Price(r_t, a, sigma, t, TM, yield, forward), /*underlying*/
-      Bond_Price(r_t, a, sigma, t, T, yield, forward)), /*discount factor*/
+      Bond_Price(r_t, a, sigma, t, T, yield, forward), /*discount factor*/
       strike,
       T_Forward_Bond_Volatility(a, sigma, t, T, TM) /*volatility of underlying*/
-
     );
   }
   template<typename MeanRevertSpeed, typename Volatility, typename SecondFutureTime, typename ThirdFutureTime, typename Strike, typename GetYield>
@@ -271,12 +270,12 @@ namespace hullwhite{
   ){
     std::sort(couponTimes.begin(), couponTimes.end());
     auto myOptimalR=newton::zeros([&](auto &r){
-      return Coupon_Bond_Price(r, a, sigma, T, couponTimes, couponRate, yieldClass)-strike; //T is "future" time since bond is priced at opion maturity
+      return Coupon_Bond_Price(r, a, sigma, T, couponTimes, couponRate, yield, forward)-strike; //T is "future" time since bond is priced at opion maturity
     }, .03, .0000001, 50);
 
     return futilities::sum(couponTimes, [&](const auto& val, const auto& index){
-      return val>T:Bond_Put(r_t, a, sigma, t, T, val, Bond_Price(myOptimalR, a, sigma, T, val, yield, forward), yield, forward);
-    })+Bond_Put(r_t, a, sigma, t, T, couponTimes.back(), Bond_Price(myOptimalR, a, sigma, T, couponTimes.back(), yieldClass), yieldClass);
+      return val>T?Bond_Put(r_t, a, sigma, t, T, val, Bond_Price(myOptimalR, a, sigma, T, val, yield, forward), yield, forward):0.0;
+    })+couponTimes.back()>T?Bond_Put(r_t, a, sigma, t, T, couponTimes.back(), Bond_Price(myOptimalR, a, sigma, T, couponTimes.back(), yield, forward), yield, forward):0.0;
   }
 
   template<typename R, typename MeanRevertSpeed, typename Volatility, typename FirstFutureTime, typename SecondFutureTime, typename Delta,  typename Strike, typename GetYield, typename GetInstantaneousForward>
@@ -339,7 +338,7 @@ namespace hullwhite{
     //auto denominator=Bond_Price(r_t, a, sigma, t, T+delta, yield, forward); //final bond price
     
     return (1.0-Bond_Price(r_t, a, sigma, t, T+delta, yield, forward))/(futilities::sum(0, numPayments, [&](const auto& index){
-      return Bond_Price(r_t, a, sigma, t, t+delta*(index), yieldClass);
+      return Bond_Price(r_t, a, sigma, t, t+delta*(index), yield, forward);
     })*delta);
     /*auto num=1.0-denominator;
     for(int i=0; i<(numPayments-1); ++i){
@@ -365,9 +364,9 @@ namespace hullwhite{
     //auto swap=Bond_Price(r_t, a, sigma, t, firstExchangeDate, yieldClass)/delta-Bond_Price(r_t, a, sigma, t, firstExchangeDate+delta, yieldClass)*rate;//(1/delta+rate);
     //auto swap=Bond_Price(r_t, a, sigma, t, firstExchangeDate, yieldClass)-Bond_Price(r_t, a, sigma, t, firstExchangeDate+delta, yieldClass)*rate*delta;//(1/delta+rate);
     
-    return Bond_Price(r_t, a, sigma, t, firstExchangeDate, yieldClass)-futilities::sum(1, numPayments, [&](const auto& index){
-      return Bond_Price(r_t, a, sigma, t, firstExchangeDate+delta*index, yieldClass)*(rate*delta)
-    })-(1.0+rate*delta)*Bond_Price(r_t, a, sigma, t, firstExchangeDate+delta*(numPayments), yieldClass);
+    return Bond_Price(r_t, a, sigma, t, firstExchangeDate, yield, forward)-futilities::sum(1, numPayments, [&](const auto& index){
+      return Bond_Price(r_t, a, sigma, t, firstExchangeDate+delta*index, yield, forward)*rate*delta;
+    })-(1.0+rate*delta)*Bond_Price(r_t, a, sigma, t, firstExchangeDate+delta*(numPayments), yield, forward);
     /*for(int i=2; i<numPayments; ++i){
       swap+=Bond_Price(r_t, a, sigma, t, firstExchangeDate+delta*(i), yieldClass)*(-rate*delta);
     }
@@ -391,14 +390,13 @@ namespace hullwhite{
   ){
     assert(T>TM);
     int numPayments=floor((T-TM)/delta)+1; //starts at TM.
-    std::vector<ThirdFutureTime> couponTimes;
+   // std::vector<ThirdFutureTime> couponTimes;
     auto couponTimes=futilities::for_each_parallel(0, numPayments, [&](const auto& index){
       return TM+(index+1)*delta;
-    })
+    });
     return Coupon_Bond_Put(r_t, a, sigma, 1.0, t, TM, couponTimes, strike*delta, yield, forward);//swaption is equal to put on coupon bond with coupon=swaption strike*delta and strike 1.
   }
   template<typename R, typename MeanRevertSpeed, typename Volatility, typename Strike, typename FirstFutureTime, typename SecondFutureTime, typename ThirdFutureTime, typename Delta, typename GetYield, typename GetInstantaneousForward>
-  template<typename optionMaturity> /* */
   auto AmericanSwaption(
     const R& r_t,
     const MeanRevertSpeed& a,
@@ -422,33 +420,32 @@ namespace hullwhite{
       auto fInv=[&](double t1, const auto& currVal, double dt, int j){
           return sigma*currVal;//+phi(t+t1);
       };
+      auto checkTreeStep=[&](int step, int j, double t1, double phiAtT){
+        return step!=j?phiT(a, sigma, t1, forward):phiAtT;
+      };
       int treeStep=-1;
       double phiAtT=0;
       auto payoff=[&](double t1, const auto& currVal, double dt, int j)/*-> decltype(currVal)*/{
           t1=t1+t;
-          if(treeStep!=j){
-            treeStep=j;
-            phiAtT=phiT(a, sigma, t1, yield, forward)
-          }
+          phiAtT=checkTreeStep(treeStep, j, t1, phiAtT);
+          treeStep=j;
 
         /* if(trackPhi.find(j)==trackPhi.end()){//to only compute phiT once per time step
               trackPhi.insert({j, phiT(a, sigma, t+t1, yieldClass)});
           }*/
           
-          auto swp=Swap_Price(currVal+trackPhi.find(j)->second, a, sigma, t1, T+t1-TM, delta, strike, yieldClass);
+          auto swp=Swap_Price(currVal+phiAtT, a, sigma, t1, T+t1-TM, delta, strike, yield, forward);
           return swp>0?swp:0.0;
       };
       auto discount=[&](double t1, const auto& currVal, double dt, int j){
         /* if(trackPhi.find(j)==trackPhi.end()){
               trackPhi.insert({j, phiT(a, sigma, t+t1, yieldClass)});
           }*/
-          if(treeStep!=j){
-            treeStep=j;
-            phiAtT=phiT(a, sigma, t+t1, yield, forward)
-          }
+          phiAtT=checkTreeStep(treeStep, j, t+t1, phiAtT);
+          treeStep=j;
           return exp(-(currVal+phiAtT)*dt);  
       };
-      return computeTree(alphaFunction, sigmaFunction, fInv, payoff, discount, 100, TM-t, (r_t-phiT(a, sigma, t, yield, forward))/sigma);
+      return computeTree(alphaFunction, sigmaFunction, fInv, payoff, discount, 100, TM-t, (r_t-phiT(a, sigma, t, forward))/sigma);
   }
 }
 #endif
