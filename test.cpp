@@ -13,12 +13,6 @@ const double strike=.04;
 const double futureTime=.5;
 const double swpMaturity=5.5;
 const double optMaturity=1.5;
-/*auto bndV=[&](double r, double a, double b, double sigma, double t){
-    double at=(1-exp(-a*t))/a;
-    double ct=sigma*sigma;
-    ct=(b-ct/(2*a*a))*(at-t)-ct*at*at/(4*a);
-    return exp(-at*r+ct);
-};*/
 auto square=[](const auto& val){
     return val*val;
 };
