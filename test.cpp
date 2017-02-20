@@ -4,63 +4,130 @@
 #include "HullWhite.h"
 #include "AutoDiff.h"
 
-const double currRate=.02;
-const double sig=.02;
-const double a=.3;
-const double b=.04;
-const double delta=.25;
-const double strike=.04;
-const double futureTime=.5;
-const double swpMaturity=5.5;
-const double optMaturity=1.5;
-auto square=[](const auto& val){
-    return val*val;
-};
-auto yield=[&](const auto& t){
-    auto at=(1-exp(-a*t))/a;
-    auto ct=(b-sig*sig/(2*a*a))*(at-t)-sig*sig*at*at/(4*a);
-    return (at*currRate-ct);
-};
-auto forward=[&](const auto& t){
-    return b+exp(-a*t)*(currRate-b)-(sig*sig/(2*a*a))*square(1-exp(-a*t));
-};
 
-std::vector<double> couponTimes(5);
-
-TEST_CASE("Test stuff", "[HullWhite]"){
-    couponTimes[0]=.5;
-    couponTimes[1]=1;
-    couponTimes[2]=1.5;
-    couponTimes[3]=2;
-    couponTimes[4]=2.5;
-    //std::cout<<yield(AutoDiff<double>(5.0, 1.0)).getDual()<<std::endl;
-    /*const R& r_t,
-    const MeanRevertSpeed& a,
-    const Volatility& sigma,
-    const Strike& strike,
-    const FirstFutureTime& t, 
-    const SecondFutureTime& T, 
-    const ThirdFutureTime& TM, 
-    const Delta& delta, 
-    const GetYield& yield,
-    const GetInstantaneousForward& forward*/
+TEST_CASE("Test Bond Price", "[HullWhite]"){
+    const double currRate=.02;
+    const double sig=.02;
+    const double a=.3;
+    const double b=.04;
+    const double delta=.25;
+    const double strike=.04;
+    const double futureTime=.5;
+    const double swpMaturity=5.5;
+    const double optMaturity=1.5;
+    auto square=[](auto&& val){
+        return val*val;
+    };
+    auto yield=[&](const auto& t){
+        auto at=(1-exp(-a*t))/a;
+        auto ct=(b-sig*sig/(2*a*a))*(at-t)-sig*sig*at*at/(4*a);
+        return (at*currRate-ct);
+    };
+    auto forward=[&](const auto& t){
+        return b+exp(-a*t)*(currRate-b)-(sig*sig/(2*a*a))*square(1-exp(-a*t));
+    };
     REQUIRE(hullwhite::Bond_Price(currRate, a, sig, futureTime, optMaturity, yield, forward)==hullwhite::Bond_Price(optMaturity-futureTime, yield));
-    //std::cout<<hullwhite::Bond_Price(currRate, a, sig, futureTime, optMaturity, yield, forward)<<std::endl;
-    //std::cout<<hullwhite::Bond_Price(optMaturity-futureTime, yield)<<std::endl;
-
-    std::cout<<hullwhite::Swaption(currRate, a, sig, strike, 0.0, 4.5, .5, delta, yield, forward)<<std::endl;
-    //std::cout<<AmericanSwaption(currRate, a, sig, strike, futureTime, swpMaturity, optMaturity, delta, yld)<<std::endl;
-    /*AutoDiff<double> curr(currRate, 1.0);
-    std::cout<<hullwhite::AmericanSwaption(currRate, a, sig, strike, 0.0, 4.5, .5, delta, yield, forward)<<std::endl;
-
-    auto ev=hullwhite::Swaption(curr, a, sig, strike, 0.0, 4.5, .5, delta, yield, forward);
-
-    std::cout<<ev.getStandard()<<std::endl;
-    std::cout<<ev.getDual()<<std::endl;
-
-
-    auto v=hullwhite::AmericanSwaption(curr, a, sig, strike, 0.0, 4.5, .5, delta, yield, forward);
-    std::cout<<v.getStandard()<<std::endl;
-    std::cout<<v.getDual()<<std::endl;*/
-    //REQUIRE(futilities::for_each_parallel(std::move(testV), squareTestV)==std::vector<int>({25, 36, 49}));
+}
+TEST_CASE("Test swap", "[HullWhite]"){
+    const double currRate=.02;
+    const double sig=.02;
+    const double a=.3;
+    const double b=.04;
+    const double delta=.25;
+    const double strike=.04;
+    const double futureTime=.5;
+    const double swpMaturity=5.5;
+    auto square=[](const auto& val){
+        return val*val;
+    };
+    auto yield=[&](const auto& t){
+        auto at=(1-exp(-a*t))/a;
+        auto ct=(b-sig*sig/(2*a*a))*(at-t)-sig*sig*at*at/(4*a);
+        return (at*currRate-ct);
+    };
+    auto forward=[&](const auto& t){
+        return b+exp(-a*t)*(currRate-b)-(sig*sig/(2*a*a))*square(1-exp(-a*t));
+    };
+    REQUIRE(
+        hullwhite::Swap_Price(
+            currRate, a, sig, 
+            futureTime, swpMaturity, delta,
+            hullwhite::Swap_Rate(
+               currRate,
+               a, 
+               sig,
+               futureTime,
+               swpMaturity,
+               delta,
+               yield,
+               forward 
+            ),
+            yield, forward
+        )==Approx(0.0)
+    );
+}
+TEST_CASE("Swaption", "[HullWhite]"){
+    const double currRate=.02;
+    const double sig=.02;
+    const double a=.3;
+    const double b=.04;
+    const double delta=.25;
+    const double swaprate=.04;
+    const double futureTime=.5;
+    const double swpTenor=5;
+    const double optMaturity=1.5;
+    auto square=[](const auto& val){
+        return val*val;
+    };
+    auto yield=[&](const auto& t){
+        auto at=(1-exp(-a*t))/a;
+        auto ct=(b-sig*sig/(2*a*a))*(at-t)-sig*sig*at*at/(4*a);
+        return (at*currRate-ct);
+    };
+    auto forward=[&](const auto& t){
+        return b+exp(-a*t)*(currRate-b)-(sig*sig/(2*a*a))*square(1-exp(-a*t));
+    };
+    //std::cout<<"American "<<hullwhite::AmericanSwaption(currRate, a, sig, swaprate, 0.0, swpTenor, optMaturity, delta, yield, forward)<<std::endl;
+    //auto analytic=hullwhite::Payer_Swaption(currRate, a, sig, swaprate, futureTime, swpTenor, optMaturity, delta, yield, forward);
+    for(int i=0; i<5; ++i){
+        auto rate=.000001+i*.1;
+        auto analytic=hullwhite::Payer_Swaption(rate, a, sig, swaprate, futureTime, swpTenor, optMaturity, delta, yield, forward);
+        auto tree=hullwhite::SwaptionWithTree(rate, a, sig, swaprate, futureTime, swpTenor, optMaturity, delta, yield, forward);
+        std::cout<<"rate "<<rate<<", value "<<analytic<<", tree "<<tree<<", ratio "<<tree/analytic<<std::endl;
+    }
+    /*REQUIRE(
+        hullwhite::PayerSwaption(currRate, a, sig, swaprate, 0.0, swpTenor, optMaturity, delta, yield, forward)==
+        Approx(
+            hullwhite::SwaptionWithTree(currRate, a, sig, swaprate, 0.0, swpTenor, optMaturity, delta, yield, forward)
+        )
+    );*/
+}
+TEST_CASE("ZCB option Reference", "[HullWhite]"){
+    //http://www.quantcalc.net/BondOption_Vasicek.html
+    const double currRate=.01;
+    const double sig=.03;
+    const double a=.05;
+    const double b=.04;
+    const double delta=.25;
+    const double strike=.96;
+    const double futureTime=0;
+    const double bondMaturity=3;
+    const double optMaturity=2;
+    auto square=[](const auto& val){
+        return val*val;
+    };
+    auto yield=[&](const auto& t){
+        auto at=(1-exp(-a*t))/a;
+        auto ct=(b-sig*sig/(2*a*a))*(at-t)-sig*sig*at*at/(4*a);
+        return (at*currRate-ct);
+    };
+    auto forward=[&](const auto& t){
+        return b+exp(-a*t)*(currRate-b)-(sig*sig/(2*a*a))*square(1-exp(-a*t));
+    };
+    REQUIRE(
+        hullwhite::Bond_Call(currRate, a, sig, futureTime, optMaturity, bondMaturity,strike, yield, forward)==
+        Approx(
+            .033283
+        )
+    );
 }

@@ -6,7 +6,7 @@
 #include <vector>
 #include <unordered_map>
 //#include <functional>
-#include "Tree.h"
+#include "BTree.h"
 //#include "AutoDiff.h"
 //#include "BondUtilities.h"
 #include "BlackScholes.h" //for option pricing
@@ -118,19 +118,10 @@ namespace hullwhite{
     const GetYield& yield,/*the continuously compounded zero coupon yield*/
     const GetInstantaneousForward& forward //instantanoues forward rate
   ){
-    //int n=couponTimes.size();
     std::sort(couponTimes.begin(), couponTimes.end());
-    //assert(couponTimes[n-1]>t);
-    //auto bondprice=Bond_Price(r_t, a, sigma, t, couponTimes[n-1], yield, forward)*(1+couponRate);
     return futilities::sum(couponTimes, [&](const auto& val, const auto& index){
       return val>t?Bond_Price(r_t, a, sigma, t, val, yield, forward)*couponRate:0.0;
     })+Bond_Price(r_t, a, sigma, t, couponTimes.back(), yield, forward);
-    /*for(int i=0; i<(n-1); ++i){
-      if(couponTimes[i]>t){
-        bondprice=bondprice+Bond_Price(r_t, a, sigma, t, couponTimes[i], yieldClass)*couponRate;
-      }
-    }*/
-    //return bondprice;
   }
   template<typename SecondFutureTime, typename Coupon, typename GetYield>
   auto Coupon_Bond_Price(/*The coupon bond price under Hull White at time 0*/
@@ -271,7 +262,7 @@ namespace hullwhite{
     std::sort(couponTimes.begin(), couponTimes.end());
     auto myOptimalR=newton::zeros([&](auto &r){
       return Coupon_Bond_Price(r, a, sigma, T, couponTimes, couponRate, yield, forward)-strike; //T is "future" time since bond is priced at opion maturity
-    }, .03, .0000001, 50);
+    }, .03, .000000001, 50);
 
     return futilities::sum(couponTimes, [&](const auto& val, const auto& index){
       return val>T?Bond_Put(r_t, a, sigma, t, T, val, Bond_Price(myOptimalR, a, sigma, T, val, yield, forward), yield, forward):0.0;
@@ -307,7 +298,7 @@ namespace hullwhite{
   }
 
   template<typename R, typename MeanRevertSpeed, typename Volatility, typename FirstFutureTime, typename SecondFutureTime, typename Delta, typename GetYield, typename GetInstantaneousForward>
-  auto EuroDollarFuture(
+  auto Euro_Dollar_Future(
     const R& r_t,
     const MeanRevertSpeed& a,
     const Volatility& sigma,
@@ -335,16 +326,9 @@ namespace hullwhite{
     const GetInstantaneousForward& forward
   ){
     int numPayments=floor((T-t)/delta)+1; //this should be an integer!  remember, T-t is the total swap length
-    //auto denominator=Bond_Price(r_t, a, sigma, t, T+delta, yield, forward); //final bond price
-    
-    return (1.0-Bond_Price(r_t, a, sigma, t, T+delta, yield, forward))/(futilities::sum(0, numPayments, [&](const auto& index){
-      return Bond_Price(r_t, a, sigma, t, t+delta*(index), yield, forward);
+    return (1.0-Bond_Price(r_t, a, sigma, t, T+delta, yield, forward))/(futilities::sum(1, numPayments+1, [&](const auto& index){
+      return Bond_Price(r_t, a, sigma, t, t+delta*index, yield, forward);
     })*delta);
-    /*auto num=1.0-denominator;
-    for(int i=0; i<(numPayments-1); ++i){
-      denominator+=Bond_Price(r_t, a, sigma, t, t+delta*(i+1), yieldClass);
-    }
-    return num/(delta*denominator);*/
   }
 
   template<typename R, typename MeanRevertSpeed, typename Volatility, typename FirstFutureTime, typename SecondFutureTime, typename Delta, typename SwapRate, typename GetYield, typename GetInstantaneousForward>
@@ -361,91 +345,160 @@ namespace hullwhite{
   ){
     int numPayments=floor((T-t)/delta)+1; //this should be an integer if t lands on a tenor date
     auto firstExchangeDate=T-(numPayments-1)*delta;    
-    //auto swap=Bond_Price(r_t, a, sigma, t, firstExchangeDate, yieldClass)/delta-Bond_Price(r_t, a, sigma, t, firstExchangeDate+delta, yieldClass)*rate;//(1/delta+rate);
-    //auto swap=Bond_Price(r_t, a, sigma, t, firstExchangeDate, yieldClass)-Bond_Price(r_t, a, sigma, t, firstExchangeDate+delta, yieldClass)*rate*delta;//(1/delta+rate);
-    
     return Bond_Price(r_t, a, sigma, t, firstExchangeDate, yield, forward)-futilities::sum(1, numPayments, [&](const auto& index){
       return Bond_Price(r_t, a, sigma, t, firstExchangeDate+delta*index, yield, forward)*rate*delta;
     })-(1.0+rate*delta)*Bond_Price(r_t, a, sigma, t, firstExchangeDate+delta*(numPayments), yield, forward);
-    /*for(int i=2; i<numPayments; ++i){
-      swap+=Bond_Price(r_t, a, sigma, t, firstExchangeDate+delta*(i), yieldClass)*(-rate*delta);
-    }
-    swap+=Bond_Price(r_t, a, sigma, t, firstExchangeDate+delta*(numPayments), yieldClass)*(-rate*delta-1.0);
-    return swap;*/
+
   }
 
 
   template<typename R, typename MeanRevertSpeed, typename Volatility, typename Strike, typename FirstFutureTime, typename SecondFutureTime, typename ThirdFutureTime, typename Delta, typename GetYield, typename GetInstantaneousForward>
-  auto Swaption(
+  auto Payer_Swaption(
     const R& r_t,
     const MeanRevertSpeed& a,
     const Volatility& sigma,
-    const Strike& strike,
+    const Strike& swapRate,
     const FirstFutureTime& t, /*future time*/
-    const SecondFutureTime& T, /*swap maturity*/
+    const SecondFutureTime& SwapTenor, /*swap tenor...length of time for swap at TM*/
     const ThirdFutureTime& TM, /*option maturity*/
     const Delta& delta, /*tenor of the floating rate*/
     const GetYield& yield,
     const GetInstantaneousForward& forward
   ){
-    assert(T>TM);
-    int numPayments=floor((T-TM)/delta)+1; //starts at TM.
-   // std::vector<ThirdFutureTime> couponTimes;
-    auto couponTimes=futilities::for_each_parallel(0, numPayments, [&](const auto& index){
-      return TM+(index+1)*delta;
+    assert(TM>t);
+    int numPayments=floor(SwapTenor/delta)+1; 
+    auto couponTimes=futilities::for_each_parallel(1, numPayments+1, [&](const auto& index){
+      return TM+index*delta;
     });
-    return Coupon_Bond_Put(r_t, a, sigma, 1.0, t, TM, couponTimes, strike*delta, yield, forward);//swaption is equal to put on coupon bond with coupon=swaption strike*delta and strike 1.
+    return Coupon_Bond_Put(r_t, a, sigma, 1.0, t, TM, couponTimes, swapRate*delta, yield, forward);//swaption is equal to put on coupon bond with coupon=swaption swapRate*delta and strike 1.
+  }
+  template<typename R, typename MeanRevertSpeed, typename Volatility, typename Strike, typename FirstFutureTime, typename SecondFutureTime, typename ThirdFutureTime, typename Delta, typename GetYield, typename GetInstantaneousForward>
+  auto Receiver_Swaption(
+    const R& r_t,
+    const MeanRevertSpeed& a,
+    const Volatility& sigma,
+    const Strike& swapRate,
+    const FirstFutureTime& t, /*future time*/
+    const SecondFutureTime& SwapTenor, /*swap tenor...length of time for swap at TM*/
+    const ThirdFutureTime& TM, /*option maturity*/
+    const Delta& delta, /*tenor of the floating rate*/
+    const GetYield& yield,
+    const GetInstantaneousForward& forward
+  ){
+    assert(TM>t);
+    int numPayments=floor(SwapTenor/delta)+1; 
+    auto couponTimes=futilities::for_each_parallel(1, numPayments+1, [&](const auto& index){
+      return TM+index*delta;
+    });
+    return Coupon_Bond_Call(r_t, a, sigma, 1.0, t, TM, couponTimes, swapRate*delta, yield, forward);//swaption is equal to put on coupon bond with coupon=swaption swapRate*delta and strike 1.
   }
   template<typename R, typename MeanRevertSpeed, typename Volatility, typename Strike, typename FirstFutureTime, typename SecondFutureTime, typename ThirdFutureTime, typename Delta, typename GetYield, typename GetInstantaneousForward>
   auto AmericanSwaption(
     const R& r_t,
     const MeanRevertSpeed& a,
     const Volatility& sigma,
-    const Strike& strike,
+    const Strike& swapRate,
     const FirstFutureTime& t, /*future time*/
-    const SecondFutureTime& T, /*swap maturity*/
+    const SecondFutureTime& SwapTenor, /*swap tenor*/
     const ThirdFutureTime& TM, /*option maturity*/
     const Delta& delta, /*tenor of the floating rate*/
     const GetYield& yield,
     const GetInstantaneousForward& forward
   ){
-      assert(T>TM);
-      //std::unordered_map<int, double> trackPhi;
+      assert(TM>t);
       auto alphaFunction=[&](double t1, const auto& currVal, double dt, int j){
           return -(a*currVal)/sigma;
       };
       auto sigmaFunction=[&](double t1, const auto& currVal, double dt, int j){
           return 0.0;//interesting  
       };
-      auto fInv=[&](double t1, const auto& currVal, double dt, int j){
-          return sigma*currVal;//+phi(t+t1);
+      auto fInv=[&](double t1, const auto& y, double dt, int j){
+          return sigma*y;//+phi(t+t1);
       };
       auto checkTreeStep=[&](int step, int j, double t1, double phiAtT){
         return step!=j?phiT(a, sigma, t1, forward):phiAtT;
       };
       int treeStep=-1;
       double phiAtT=0;
-      auto payoff=[&](double t1, const auto& currVal, double dt, int j)/*-> decltype(currVal)*/{
+      auto payoff=[&](double t1, const auto& currVal, double dt, int j){
           t1=t1+t;
           phiAtT=checkTreeStep(treeStep, j, t1, phiAtT);
+          //phiAtT=phiT(a, sigma, t1, forward);
           treeStep=j;
-
-        /* if(trackPhi.find(j)==trackPhi.end()){//to only compute phiT once per time step
-              trackPhi.insert({j, phiT(a, sigma, t+t1, yieldClass)});
-          }*/
-          
-          auto swp=Swap_Price(currVal+phiAtT, a, sigma, t1, T+t1-TM, delta, strike, yield, forward);
+          auto swp=Swap_Price(currVal+phiAtT, a, sigma, t1, SwapTenor+t1, delta, swapRate, yield, forward);
           return swp>0?swp:0.0;
       };
       auto discount=[&](double t1, const auto& currVal, double dt, int j){
-        /* if(trackPhi.find(j)==trackPhi.end()){
-              trackPhi.insert({j, phiT(a, sigma, t+t1, yieldClass)});
-          }*/
           phiAtT=checkTreeStep(treeStep, j, t+t1, phiAtT);
+          //phiAtT=phiT(a, sigma, t1+t, forward);
           treeStep=j;
           return exp(-(currVal+phiAtT)*dt);  
       };
-      return computeTree(alphaFunction, sigmaFunction, fInv, payoff, discount, 100, TM-t, (r_t-phiT(a, sigma, t, forward))/sigma);
+      return btree::computePrice(
+        alphaFunction, 
+        sigmaFunction, 
+        fInv, 
+        payoff, 
+        discount, 
+        (r_t-phiT(a, sigma, t, forward))/sigma,//initial "y"
+        100, 
+        TM-t
+      );
+  }
+  template<typename R, typename MeanRevertSpeed, typename Volatility, typename Strike, typename FirstFutureTime, typename SecondFutureTime, typename ThirdFutureTime, typename Delta, typename GetYield, typename GetInstantaneousForward>
+  auto SwaptionWithTree(
+    const R& r_t,
+    const MeanRevertSpeed& a,
+    const Volatility& sigma,
+    const Strike& swapRate,
+    const FirstFutureTime& t, /*future time*/
+    const SecondFutureTime& SwapTenor, /*swap tenor*/
+    const ThirdFutureTime& TM, /*option maturity*/
+    const Delta& delta, /*tenor of the floating rate*/
+    const GetYield& yield,
+    const GetInstantaneousForward& forward
+  ){
+      assert(TM>t);
+      auto alphaFunction=[&](double t1, const auto& currVal, double dt, int j){
+          return -(a*currVal)/sigma;
+      };
+      auto sigmaFunction=[&](double t1, const auto& currVal, double dt, int j){
+          return 0.0;//interesting  
+      };
+      auto fInv=[&](double t1, const auto& y, double dt, int j){
+          return sigma*y;//+phi(t+t1);
+      };
+      //to save recomputing along all nodes
+      auto checkTreeStep=[&](int step, int j, double t, double phiAtT){
+        return step!=j?phiT(a, sigma, t, forward):phiAtT;
+      };
+      int treeStep=-1;
+      double phiAtT=0;
+      auto payoff=[&](double t1, const auto& currVal, double dt, int width){
+          t1=t1+t;
+          phiAtT=checkTreeStep(treeStep, width, t1, phiAtT);
+          //phiAtT=phiT(a, sigma, t1, forward);
+          treeStep=width;
+          auto swp=Swap_Price(currVal+phiAtT, a, sigma, t1, t1+SwapTenor, delta, swapRate, yield, forward);
+          return swp>0?swp:0.0;
+      };
+      auto discount=[&](double t1, const auto& currVal, double dt, int width){
+          phiAtT=checkTreeStep(treeStep, width, t+t1, phiAtT);
+          //phiAtT=phiT(a, sigma, t1+t, forward);
+          treeStep=width;
+          return exp(-(currVal+phiAtT)*dt);  
+      };
+      return btree::computePrice(
+        alphaFunction, 
+        sigmaFunction, 
+        fInv, 
+        payoff, 
+        discount, 
+        (r_t-phiT(a, sigma, t, forward))/sigma,//initial "y"
+        5000, 
+        TM-t,
+        false
+      );
   }
   /**generates a vasicek given a, b, sigma, and normal random number*/
   template<typename R, typename MeanRevertSpeed, typename LongRunMean, typename Volatility, typename FirstFutureTime, typename Simul>
@@ -453,23 +506,5 @@ namespace hullwhite{
       auto tmp=exp(-a*nextTime);
       return b*(1-tmp)+currVal*tmp+sigma*sqrt((1-exp(-2*a*nextTime))/(2*a))*simul;
   }
-
-  /**THIS MIGHT BE DEPRICATED*/
-  /*double findHistoricalMean(std::vector<SpotValue>& historicalRates, double shortRateTime, double a){//assumes that real world rate process follows Vasicek
-      int n=historicalRates.size();
-      double dt=0;
-      double b=0;
-      //double shortRateTime=7.0/360.0;
-      historicalRates[0].value=convertLiborToContinuous(historicalRates[0].value, shortRateTime);
-      for(int i=0; i<(n-1); ++i){
-          historicalRates[i+1].date.setScale("year");
-          dt=historicalRates[i+1].date-historicalRates[i].date;
-          historicalRates[i+1].value=convertLiborToContinuous(historicalRates[i+1].value, shortRateTime); //convert to continuous time
-          b+=(historicalRates[i+1].value-exp(-    dt*a)*historicalRates[i].value)/(1.0-exp(-dt*a));
-      }
-      b=b/(n-1);
-      return b;
-    //std::cout<<"This is b: "<<b<<std::endl;
-  }*/
 }
 #endif
