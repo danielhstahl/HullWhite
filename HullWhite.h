@@ -395,7 +395,7 @@ namespace hullwhite{
     return Coupon_Bond_Call(r_t, a, sigma, 1.0, t, TM, couponTimes, swapRate*delta, yield, forward);//swaption is equal to put on coupon bond with coupon=swaption swapRate*delta and strike 1.
   }
   template<typename R, typename MeanRevertSpeed, typename Volatility, typename Strike, typename FirstFutureTime, typename SecondFutureTime, typename ThirdFutureTime, typename Delta, typename GetYield, typename GetInstantaneousForward>
-  auto AmericanSwaption(
+  auto American_Swaption(
     const R& r_t,
     const MeanRevertSpeed& a,
     const Volatility& sigma,
@@ -405,7 +405,8 @@ namespace hullwhite{
     const ThirdFutureTime& TM, /*option maturity*/
     const Delta& delta, /*tenor of the floating rate*/
     const GetYield& yield,
-    const GetInstantaneousForward& forward
+    const GetInstantaneousForward& forward,
+    const bool isPayer,
   ){
       assert(TM>t);
       auto alphaFunction=[&](double t1, const auto& currVal, double dt, int j){
@@ -428,7 +429,7 @@ namespace hullwhite{
           //phiAtT=phiT(a, sigma, t1, forward);
           treeStep=j;
           auto swp=Swap_Price(currVal+phiAtT, a, sigma, t1, SwapTenor+t1, delta, swapRate, yield, forward);
-          return swp>0?swp:0.0;
+          return isPayer?(swp>0?swp:0.0):(swp<0?0.0:swp);
       };
       auto discount=[&](double t1, const auto& currVal, double dt, int j){
           phiAtT=checkTreeStep(treeStep, j, t+t1, phiAtT);
@@ -446,6 +447,36 @@ namespace hullwhite{
         100, 
         TM-t
       );
+  }
+  template<typename R, typename MeanRevertSpeed, typename Volatility, typename Strike, typename FirstFutureTime, typename SecondFutureTime, typename ThirdFutureTime, typename Delta, typename GetYield, typename GetInstantaneousForward>
+  auto American_Payer_Swaption(
+    const R& r_t,
+    const MeanRevertSpeed& a,
+    const Volatility& sigma,
+    const Strike& swapRate,
+    const FirstFutureTime& t, /*future time*/
+    const SecondFutureTime& SwapTenor, /*swap tenor*/
+    const ThirdFutureTime& TM, /*option maturity*/
+    const Delta& delta, /*tenor of the floating rate*/
+    const GetYield& yield,
+    const GetInstantaneousForward& forward,
+  ){
+    return American_Swaption(r_t, a, sigma, swapRate, t, SwapTenor, TM, delta, yield, forward, true);
+  }
+  template<typename R, typename MeanRevertSpeed, typename Volatility, typename Strike, typename FirstFutureTime, typename SecondFutureTime, typename ThirdFutureTime, typename Delta, typename GetYield, typename GetInstantaneousForward>
+  auto American_Receiver_Swaption(
+    const R& r_t,
+    const MeanRevertSpeed& a,
+    const Volatility& sigma,
+    const Strike& swapRate,
+    const FirstFutureTime& t, /*future time*/
+    const SecondFutureTime& SwapTenor, /*swap tenor*/
+    const ThirdFutureTime& TM, /*option maturity*/
+    const Delta& delta, /*tenor of the floating rate*/
+    const GetYield& yield,
+    const GetInstantaneousForward& forward,
+  ){
+    return American_Swaption(r_t, a, sigma, swapRate, t, SwapTenor, TM, delta, yield, forward, false);
   }
   /**Intended for testing only!!*/
   template<typename R, typename MeanRevertSpeed, typename Volatility, typename Strike, typename FirstFutureTime, typename SecondFutureTime, typename ThirdFutureTime, typename Delta, typename GetYield, typename GetInstantaneousForward>
