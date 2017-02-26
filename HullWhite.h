@@ -406,7 +406,7 @@ namespace hullwhite{
     const Delta& delta, /*tenor of the floating rate*/
     const GetYield& yield,
     const GetInstantaneousForward& forward,
-    const bool isPayer,
+    const bool isPayer
   ){
       assert(TM>t);
       auto alphaFunction=[&](double t1, const auto& currVal, double dt, int j){
@@ -459,7 +459,7 @@ namespace hullwhite{
     const ThirdFutureTime& TM, /*option maturity*/
     const Delta& delta, /*tenor of the floating rate*/
     const GetYield& yield,
-    const GetInstantaneousForward& forward,
+    const GetInstantaneousForward& forward
   ){
     return American_Swaption(r_t, a, sigma, swapRate, t, SwapTenor, TM, delta, yield, forward, true);
   }
@@ -474,7 +474,7 @@ namespace hullwhite{
     const ThirdFutureTime& TM, /*option maturity*/
     const Delta& delta, /*tenor of the floating rate*/
     const GetYield& yield,
-    const GetInstantaneousForward& forward,
+    const GetInstantaneousForward& forward
   ){
     return American_Swaption(r_t, a, sigma, swapRate, t, SwapTenor, TM, delta, yield, forward, false);
   }
