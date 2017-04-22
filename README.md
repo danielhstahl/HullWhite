@@ -11,4 +11,4 @@
 
 
 
-Rewriting of market risk application.  Predominantly used for fixed income.  Assumes interest rate process is generalized Hull White.  Uses my [Binomial Tree](https://github.com/phillyfan1138/BinomialTree), [Newton](https://github.com/phillyfan1138/GaussNewton), [AutoDiff](git clone https://github.com/phillyfan1138/AutoDiff), and [Functional Utilities](https://github.com/phillyfan1138/FunctionalUtilities) repositories.
+Rewriting of market risk application.  Predominantly used for fixed income.  Assumes interest rate process is generalized Hull White.  Uses my [Binomial Tree](https://github.com/phillyfan1138/BinomialTree), [Newton](https://github.com/phillyfan1138/GaussNewton), [AutoDiff](https://github.com/phillyfan1138/AutoDiff), and [Functional Utilities](https://github.com/phillyfan1138/FunctionalUtilities) repositories.
