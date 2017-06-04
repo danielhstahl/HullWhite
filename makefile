@@ -1,4 +1,4 @@
-INCLUDES=-I../GaussNewton  -I../BinomialTree -I../AutoDiff -I../FunctionalUtilities
+INCLUDES=-I../GaussNewton  -I../BinomialTree -I../AutoDiff -I../FunctionalUtilities -I../TupleUtilities
 
 test: test.o
 	g++ -std=c++14 -O3 -pthread --coverage -w -fPIC test.o  $(LDFLAGS) $(INCLUDES) -o test -fopenmp
