@@ -10,6 +10,9 @@
 #include "Newton.h"
 #include "FunctionalUtilities.h"
 
+const double precision=.0000001;
+const double r_init=.03;
+const int max_iter=50;
 /*Note: the fundamental times here are (0, t, T, TM).  0 is current time (and is reflective of the current yield curve), t is some future time that we may want to price options at given the underlying at that time, T is an "initial" maturity and TM a "Final" maturity.  While it is natural to think of (0<t<T<TM), I only require 0<t and 0<T<TM. Note that ALL TIMES ARE WITH RESPECT TO 0!  */
 namespace hullwhite{
   template<typename MeanRevertSpeed, typename DiffFutureTimes>
@@ -130,13 +133,6 @@ namespace hullwhite{
     return futilities::sum(couponTimes, [&](const auto& val, const auto& index){
       return Bond_Price(val, yield)*couponRate;
     })+Bond_Price(couponTimes.back(), yield);
-
-    /*int n=couponTimes.size();
-    auto bondprice=Bond_Price(couponTimes[n-1], yield)*(1+couponRate);
-    for(int i=0; i<(n-1); i++){
-      bondprice+=Bond_Price(couponTimes[i], yield)*couponRate;
-    }
-    return bondprice;*/
   }
   template<typename R, typename MeanRevertSpeed, typename Volatility, typename FirstFutureTime, typename SecondFutureTime, typename ThirdFutureTime,  typename Strike, typename GetYield, typename GetInstantaneousForward>
   auto Bond_Call(/*The price of a call option on zero coupon bond under Hull White*/
@@ -189,7 +185,7 @@ namespace hullwhite{
     std::sort(couponTimes.begin(), couponTimes.end());
     auto myOptimalR=newton::zeros([&](auto &r){
       return Coupon_Bond_Price(r, a, sigma, T, couponTimes, couponRate, yield, forward)-strike; //T is "future" time since bond is priced at opion maturity
-    }, .03, .0000001, 50);
+    }, r_init, precision, max_iter);
 
     return (futilities::sum(couponTimes, [&](const auto& val, const auto& index){
       return val>T?couponRate*Bond_Call(r_t, a, sigma, t, T, val, Bond_Price(myOptimalR, a, sigma, T, val, yield, forward), yield, forward):0.0;
@@ -248,7 +244,7 @@ namespace hullwhite{
     std::sort(couponTimes.begin(), couponTimes.end());
     auto myOptimalR=newton::zeros([&](auto &r){
       return Coupon_Bond_Price(r, a, sigma, T, couponTimes, couponRate, yield, forward)-strike; //T is "future" time since bond is priced at opion maturity
-    }, .03, .000000001, 50);
+    }, r_init, precision, max_iter);
     return (futilities::sum(couponTimes, [&](const auto& val, const auto& index){
       return val>T?Bond_Put(r_t, a, sigma, t, T, val, Bond_Price(myOptimalR, a, sigma, T, val, yield, forward), yield, forward):0.0;
     })*couponRate)+(couponTimes.back()>T?Bond_Put(r_t, a, sigma, t, T, couponTimes.back(), Bond_Price(myOptimalR, a, sigma, T, couponTimes.back(), yield, forward), yield, forward):0.0);
@@ -406,7 +402,8 @@ namespace hullwhite{
     const Delta& delta, /*tenor of the floating rate*/
     const GetYield& yield,
     const GetInstantaneousForward& forward,
-    const bool isPayer
+    bool isPayer,
+    int num_steps
   ){
       assert(TM>t);
       auto alphaFunction=[&](double t1, const auto& currVal, double dt, int j){
@@ -433,7 +430,6 @@ namespace hullwhite{
       };
       auto discount=[&](double t1, const auto& currVal, double dt, int j){
           phiAtT=checkTreeStep(treeStep, j, t+t1, phiAtT);
-          //phiAtT=phiT(a, sigma, t1+t, forward);
           treeStep=j;
           return exp(-(currVal+phiAtT)*dt);  
       };
@@ -444,10 +440,29 @@ namespace hullwhite{
         payoff, 
         discount, 
         (r_t-phiT(a, sigma, t, forward))/sigma,//initial "y"
-        100, 
+        num_steps, 
         TM-t
       );
   }
+
+
+  template<typename R, typename MeanRevertSpeed, typename Volatility, typename Strike, typename FirstFutureTime, typename SecondFutureTime, typename ThirdFutureTime, typename Delta, typename GetYield, typename GetInstantaneousForward>
+  auto American_Payer_Swaption(
+    const R& r_t,
+    const MeanRevertSpeed& a,
+    const Volatility& sigma,
+    const Strike& swapRate,
+    const FirstFutureTime& t, /*future time*/
+    const SecondFutureTime& SwapTenor, /*swap tenor*/
+    const ThirdFutureTime& TM, /*option maturity*/
+    const Delta& delta, /*tenor of the floating rate*/
+    const GetYield& yield,
+    const GetInstantaneousForward& forward,
+    int num_steps
+  ){
+    return American_Swaption(r_t, a, sigma, swapRate, t, SwapTenor, TM, delta, yield, forward, true, num_steps);
+  }
+  /**Defaults to 100 steps*/
   template<typename R, typename MeanRevertSpeed, typename Volatility, typename Strike, typename FirstFutureTime, typename SecondFutureTime, typename ThirdFutureTime, typename Delta, typename GetYield, typename GetInstantaneousForward>
   auto American_Payer_Swaption(
     const R& r_t,
@@ -461,8 +476,25 @@ namespace hullwhite{
     const GetYield& yield,
     const GetInstantaneousForward& forward
   ){
-    return American_Swaption(r_t, a, sigma, swapRate, t, SwapTenor, TM, delta, yield, forward, true);
+    return American_Payer_Swaption(r_t, a, sigma, swapRate, t, SwapTenor, TM, delta, yield, forward, 100);
   }
+  template<typename R, typename MeanRevertSpeed, typename Volatility, typename Strike, typename FirstFutureTime, typename SecondFutureTime, typename ThirdFutureTime, typename Delta, typename GetYield, typename GetInstantaneousForward>
+  auto American_Receiver_Swaption(
+    const R& r_t,
+    const MeanRevertSpeed& a,
+    const Volatility& sigma,
+    const Strike& swapRate,
+    const FirstFutureTime& t, /*future time*/
+    const SecondFutureTime& SwapTenor, /*swap tenor*/
+    const ThirdFutureTime& TM, /*option maturity*/
+    const Delta& delta, /*tenor of the floating rate*/
+    const GetYield& yield,
+    const GetInstantaneousForward& forward,
+    int num_steps
+  ){
+    return American_Swaption(r_t, a, sigma, swapRate, t, SwapTenor, TM, delta, yield, forward, false, num_steps);
+  }
+   /**Defaults to 100 steps*/
   template<typename R, typename MeanRevertSpeed, typename Volatility, typename Strike, typename FirstFutureTime, typename SecondFutureTime, typename ThirdFutureTime, typename Delta, typename GetYield, typename GetInstantaneousForward>
   auto American_Receiver_Swaption(
     const R& r_t,
@@ -476,8 +508,10 @@ namespace hullwhite{
     const GetYield& yield,
     const GetInstantaneousForward& forward
   ){
-    return American_Swaption(r_t, a, sigma, swapRate, t, SwapTenor, TM, delta, yield, forward, false);
+    return American_Receiver_Swaption(r_t, a, sigma, swapRate, t, SwapTenor, TM, delta, yield, forward, 100);
   }
+
+
   /**Intended for testing only!!*/
   template<typename R, typename MeanRevertSpeed, typename Volatility, typename Strike, typename FirstFutureTime, typename SecondFutureTime, typename ThirdFutureTime, typename Delta, typename GetYield, typename GetInstantaneousForward>
   auto PayerSwaptionWithTree(
