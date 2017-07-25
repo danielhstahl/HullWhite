@@ -4,3 +4,4 @@ OptionPricing
 .vscode
 *.gcno
 test
+*.gcda
