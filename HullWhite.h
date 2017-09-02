@@ -10,6 +10,8 @@
 #include "Newton.h"
 #include "FunctionalUtilities.h"
 
+constexpr double prec1=.0000001;
+constexpr double prec2=.0000001;
 /*Note: the fundamental times here are (0, t, T, TM).  0 is current time (and is reflective of the current yield curve), t is some future time that we may want to price options at given the underlying at that time, T is an "initial" maturity and TM a "Final" maturity.  While it is natural to think of (0<t<T<TM), I only require 0<t and 0<T<TM. Note that ALL TIMES ARE WITH RESPECT TO 0!  */
 namespace hullwhite{
   template<typename MeanRevertSpeed, typename DiffFutureTimes>
@@ -189,11 +191,11 @@ namespace hullwhite{
     std::sort(couponTimes.begin(), couponTimes.end());
     auto myOptimalR=newton::zeros([&](auto &r){
       return Coupon_Bond_Price(r, a, sigma, T, couponTimes, couponRate, yield, forward)-strike; //T is "future" time since bond is priced at opion maturity
-    }, .03, .0000001, 50);
+    }, .03, prec1, prec2, 50);
 
-    return (futilities::sum(couponTimes, [&](const auto& val, const auto& index){
+    return futilities::sum(couponTimes, [&](const auto& val, const auto& index){
       return val>T?couponRate*Bond_Call(r_t, a, sigma, t, T, val, Bond_Price(myOptimalR, a, sigma, T, val, yield, forward), yield, forward):0.0;
-    }))+(couponTimes.back()>T?Bond_Call(r_t, a, sigma, t, T, couponTimes.back(), Bond_Price(myOptimalR, a, sigma, T, couponTimes.back(), yield, forward), yield, forward):0.0);
+    })+(couponTimes.back()>T?Bond_Call(r_t, a, sigma, t, T, couponTimes.back(), Bond_Price(myOptimalR, a, sigma, T, couponTimes.back(), yield, forward), yield, forward):0.0);
   }
   template<typename R, typename MeanRevertSpeed, typename Volatility, typename FirstFutureTime, typename SecondFutureTime, typename ThirdFutureTime, typename Strike, typename GetYield, typename GetInstantaneousForward>
   auto Bond_Put(/*The price of a Put option on zero coupon bond under Hull White*/
@@ -248,7 +250,7 @@ namespace hullwhite{
     std::sort(couponTimes.begin(), couponTimes.end());
     auto myOptimalR=newton::zeros([&](auto &r){
       return Coupon_Bond_Price(r, a, sigma, T, couponTimes, couponRate, yield, forward)-strike; //T is "future" time since bond is priced at opion maturity
-    }, .03, .000000001, 50);
+    }, .03, prec1, prec2, 50);
     return (futilities::sum(couponTimes, [&](const auto& val, const auto& index){
       return val>T?Bond_Put(r_t, a, sigma, t, T, val, Bond_Price(myOptimalR, a, sigma, T, val, yield, forward), yield, forward):0.0;
     })*couponRate)+(couponTimes.back()>T?Bond_Put(r_t, a, sigma, t, T, couponTimes.back(), Bond_Price(myOptimalR, a, sigma, T, couponTimes.back(), yield, forward), yield, forward):0.0);
