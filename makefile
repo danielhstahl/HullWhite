@@ -1,4 +1,7 @@
 INCLUDES=-I../GaussNewton  -I../BinomialTree -I../AutoDiff -I../FunctionalUtilities -I../TupleUtilities
+
+GCCVAL=g++
+
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 	GCCVAL=g++-7
